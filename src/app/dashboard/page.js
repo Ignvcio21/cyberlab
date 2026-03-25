@@ -47,7 +47,62 @@ export default function Dashboard() {
     []
   )
 
+  const getDemoStats = () => ({
+    total_events: 12,
+    total_alerts: 3,
+    recent_events: [
+      {
+        id: 12,
+        event_type: "Fuerza Bruta",
+        source_ip: "192.168.1.50",
+        description: "Intento fallido de login #10"
+      },
+      {
+        id: 11,
+        event_type: "Fuerza Bruta",
+        source_ip: "192.168.1.50",
+        description: "Intento fallido de login #9"
+      },
+      {
+        id: 10,
+        event_type: "Escaneo de Puertos",
+        source_ip: "192.168.1.99",
+        description: "Intento de escaneo al puerto 443"
+      },
+      {
+        id: 9,
+        event_type: "Escaneo de Puertos",
+        source_ip: "192.168.1.99",
+        description: "Intento de escaneo al puerto 22"
+      }
+    ],
+    recent_alerts: [
+      {
+        id: 3,
+        title: "Ataque de fuerza bruta detectado",
+        severity: "Alta",
+        description: "Se detectaron múltiples intentos fallidos desde la IP 192.168.1.50"
+      },
+      {
+        id: 2,
+        title: "Escaneo de puertos detectado",
+        severity: "Media",
+        description: "La IP 192.168.1.99 realizó múltiples intentos de escaneo"
+      }
+    ]
+  })
+
+  const isDemoMode = () => {
+    if (typeof window === "undefined") return false
+    return localStorage.getItem("demo_mode") === "true"
+  }
+
   const loadStats = async () => {
+    if (isDemoMode()) {
+      setStats(getDemoStats())
+      return
+    }
+
     try {
       const res = await fetch("http://127.0.0.1:8000/stats")
       const data = await res.json()
@@ -93,6 +148,28 @@ export default function Dashboard() {
   const simulateAttack = async () => {
     startSessionIfNeeded()
 
+    if (isDemoMode()) {
+      const data = {
+        message: "Simulación ejecutada en modo demo - 10 intentos detectados",
+        attack_type: "Fuerza Bruta",
+        ip: "192.168.1.50",
+        case_title: "Caso activo: fuerza bruta sobre autenticación",
+        case_text:
+          "El sistema detectó múltiples intentos fallidos de inicio de sesión desde la IP 192.168.1.50. Tu rol es investigar el incidente y contenerlo.",
+        next_step: "Usa 'show alerts' o 'show events' para comenzar el análisis."
+      }
+
+      setMessage(data.message)
+      setStats(getDemoStats())
+      setTerminalHistory((prev) => [
+        ...prev,
+        "> system: simulación de fuerza bruta ejecutada",
+        data.message
+      ])
+      startScenario(data)
+      return
+    }
+
     try {
       const res = await fetch("http://127.0.0.1:8000/simulate/bruteforce", {
         method: "POST"
@@ -117,6 +194,28 @@ export default function Dashboard() {
 
   const simulatePortScan = async () => {
     startSessionIfNeeded()
+
+    if (isDemoMode()) {
+      const data = {
+        message: "Escaneo de puertos simulado en modo demo - 10 puertos analizados",
+        attack_type: "Escaneo de Puertos",
+        ip: "192.168.1.99",
+        case_title: "Caso activo: reconocimiento de servicios",
+        case_text:
+          "Se observó actividad de reconocimiento desde la IP 192.168.1.99. Alguien está enumerando puertos para identificar servicios expuestos.",
+        next_step: "Usa 'show events' para revisar los puertos atacados."
+      }
+
+      setMessage(data.message)
+      setStats(getDemoStats())
+      setTerminalHistory((prev) => [
+        ...prev,
+        "> system: simulación de escaneo de puertos ejecutada",
+        data.message
+      ])
+      startScenario(data)
+      return
+    }
 
     try {
       const res = await fetch("http://127.0.0.1:8000/simulate/portscan", {
@@ -180,6 +279,82 @@ export default function Dashboard() {
     }
   }
 
+  const getDemoCommandOutput = (normalizedCommand) => {
+    if (normalizedCommand === "help") {
+      return (
+        "Comandos disponibles:\n" +
+        "help\n" +
+        "status\n" +
+        "show alerts\n" +
+        "show events\n" +
+        "show blocked\n" +
+        "block ip <ip>\n" +
+        "unblock ip <ip>\n" +
+        "clear"
+      )
+    }
+
+    if (normalizedCommand === "status") {
+      return (
+        "Estado del sistema:\n" +
+        "- Eventos registrados: 12\n" +
+        "- Alertas generadas: 3\n" +
+        "- IPs bloqueadas: 0\n" +
+        "- Laboratorio: operativo"
+      )
+    }
+
+    if (normalizedCommand === "show alerts") {
+      return (
+        "Últimas alertas:\n" +
+        "[Alta] Ataque de fuerza bruta detectado - Se detectaron múltiples intentos fallidos desde la IP 192.168.1.50\n" +
+        "[Media] Escaneo de puertos detectado - La IP 192.168.1.99 realizó múltiples intentos de escaneo"
+      )
+    }
+
+    if (normalizedCommand === "show events") {
+      return (
+        "Últimos eventos:\n" +
+        "Fuerza Bruta | 192.168.1.50 | Intento fallido de login #10\n" +
+        "Fuerza Bruta | 192.168.1.50 | Intento fallido de login #9\n" +
+        "Escaneo de Puertos | 192.168.1.99 | Intento de escaneo al puerto 443\n" +
+        "Escaneo de Puertos | 192.168.1.99 | Intento de escaneo al puerto 22"
+      )
+    }
+
+    if (normalizedCommand === "show blocked") {
+      const blockedCommands = validCommands.filter((cmd) =>
+        cmd.toLowerCase().startsWith("block ip ")
+      )
+
+      if (blockedCommands.length === 0) {
+        return "No hay IPs bloqueadas"
+      }
+
+      const blockedIps = blockedCommands.map((cmd) =>
+        cmd.toLowerCase().replace("block ip ", "").trim()
+      )
+
+      return `IPs bloqueadas:\n${blockedIps.join("\n")}`
+    }
+
+    if (normalizedCommand.startsWith("block ip ")) {
+      const ip = normalizedCommand.replace("block ip ", "").trim()
+      return `IP ${ip} bloqueada correctamente`
+    }
+
+    if (normalizedCommand.startsWith("unblock ip ")) {
+      const ip = normalizedCommand.replace("unblock ip ", "").trim()
+      return `IP ${ip} desbloqueada correctamente`
+    }
+
+    if (normalizedCommand === "clear") {
+      return "__CLEAR__"
+    }
+
+    return `Comando no reconocido: ${normalizedCommand}`
+  }
+
   const runCommand = async (e) => {
     e.preventDefault()
 
@@ -190,6 +365,35 @@ export default function Dashboard() {
     const currentCommand = command.trim()
     const normalizedCommand = currentCommand.toLowerCase()
     setCommand("")
+
+    if (isDemoMode()) {
+      const output = getDemoCommandOutput(normalizedCommand)
+
+      if (output === "__CLEAR__") {
+        setTerminalHistory([])
+      } else {
+        setTerminalHistory((prev) => [
+          ...prev,
+          `> ${currentCommand}`,
+          output
+        ])
+      }
+
+      const isValidCommand = validCommandPrefixes.some((prefix) =>
+        normalizedCommand === prefix || normalizedCommand.startsWith(prefix)
+      )
+
+      if (
+        isValidCommand &&
+        output !== "__CLEAR__" &&
+        !output.toLowerCase().includes("comando no reconocido")
+      ) {
+        setValidCommands((prev) => [...prev, currentCommand])
+      }
+
+      updateMissionAfterCommand(normalizedCommand, output)
+      return
+    }
 
     try {
       const res = await fetch("http://127.0.0.1:8000/terminal", {
@@ -236,6 +440,43 @@ export default function Dashboard() {
   }
 
   const generateReport = async () => {
+    if (isDemoMode()) {
+      const currentReport = {
+        username,
+        durationSeconds: elapsed,
+        totalEvents: stats.total_events,
+        totalAlerts: stats.total_alerts,
+        blockedIps: validCommands
+          .filter((cmd) => cmd.toLowerCase().startsWith("block ip "))
+          .map((cmd) => cmd.toLowerCase().replace("block ip ", "").trim()),
+        successfulCommands: validCommands.filter((cmd) => cmd.toLowerCase() !== "clear"),
+        achieved: [
+          stats.total_events > 0 ? "Se ejecutaron simulaciones correctamente" : null,
+          stats.total_alerts > 0 ? "Se detectaron alertas de seguridad" : null,
+          validCommands.some((cmd) => cmd.toLowerCase().startsWith("block ip "))
+            ? "Se aplicaron bloqueos manuales de IP"
+            : null,
+          missionState === "resolved" ? "El caso guiado fue completado" : null
+        ].filter(Boolean),
+        missing: [
+          stats.total_events === 0 ? "No se ejecutaron ataques durante la sesión" : null,
+          stats.total_alerts === 0 ? "No se generaron alertas en la sesión" : null,
+          !validCommands.some((cmd) => cmd.toLowerCase().startsWith("block ip "))
+            ? "No se aplicaron bloqueos manuales de IP"
+            : null,
+          missionState !== "resolved" ? "El caso guiado no fue completado totalmente" : null
+        ].filter(Boolean)
+      }
+
+      setReport(currentReport)
+      setTerminalHistory((prev) => [
+        ...prev,
+        "> system: informe generado",
+        "Informe de sesión disponible en pantalla."
+      ])
+      return
+    }
+
     try {
       const res = await fetch("http://127.0.0.1:8000/report")
       const data = await res.json()
@@ -317,11 +558,17 @@ export default function Dashboard() {
             <div className="timer-box">
               Tiempo de sesión: <strong>{elapsed}s</strong>
             </div>
+            {isDemoMode() && (
+              <div className="demo-warning-banner">
+                ⚠️ Modo demostración activo: esta versión online usa datos simulados.
+              </div>
+            )}
           </div>
 
           <button
             onClick={() => {
               localStorage.removeItem("username")
+              localStorage.removeItem("demo_mode")
               router.push("/")
             }}
             className="logout-button"
@@ -581,6 +828,19 @@ export default function Dashboard() {
           </div>
         </section>
       </div>
+
+      <style jsx>{`
+        .demo-warning-banner {
+          margin-top: 14px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: rgba(255, 193, 7, 0.12);
+          color: #ffd666;
+          border: 1px solid rgba(255, 193, 7, 0.28);
+          font-size: 13px;
+          font-weight: 600;
+        }
+      `}</style>
     </main>
   )
 }
