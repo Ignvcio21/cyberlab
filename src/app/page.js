@@ -12,6 +12,9 @@ export default function Home() {
   const handleLogin = async (e) => {
     e.preventDefault()
 
+    const isDemoCredentials =
+      username === "admin" && password === "admin123"
+
     try {
       const res = await fetch("http://127.0.0.1:8000/login", {
         method: "POST",
@@ -29,8 +32,16 @@ export default function Home() {
       }
 
       localStorage.setItem("username", data.username)
+      localStorage.setItem("demo_mode", "false")
       router.push("/dashboard")
     } catch {
+      if (isDemoCredentials) {
+        localStorage.setItem("username", username)
+        localStorage.setItem("demo_mode", "true")
+        router.push("/dashboard")
+        return
+      }
+
       setMessage("No se pudo conectar con el backend")
     }
   }
@@ -46,6 +57,12 @@ export default function Home() {
         <p className="login-subtitle">
           Plataforma de simulación de ciberataques
         </p>
+
+        {/* MODO DEMO INFO */}
+        <div className="demo-warning">
+          ⚠️ Modo demostración activo: algunas funciones están simuladas para
+          visualización del sistema.
+        </div>
 
         <form onSubmit={handleLogin} className="login-form">
           <input
@@ -77,6 +94,19 @@ export default function Home() {
           <div>Clave: <strong>admin123</strong></div>
         </div>
       </section>
+
+      <style jsx>{`
+        .demo-warning {
+          margin-top: 10px;
+          margin-bottom: 20px;
+          padding: 10px;
+          font-size: 12px;
+          border-radius: 8px;
+          background: rgba(255, 200, 0, 0.1);
+          color: #ffc107;
+          border: 1px solid rgba(255, 200, 0, 0.3);
+        }
+      `}</style>
     </main>
   )
 }
