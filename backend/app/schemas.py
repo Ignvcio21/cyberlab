@@ -1,5 +1,6 @@
 ﻿from pydantic import BaseModel
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+
+class SolicitudInicioSesion(BaseModel):
+    nombre_usuario: str
+    contrasena: str

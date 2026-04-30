@@ -3,110 +3,81 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 
-export default function Home() {
+export default function Inicio() {
   const router = useRouter()
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [message, setMessage] = useState("")
+  const [nombreUsuario, setNombreUsuario] = useState("")
+  const [contrasena, setContrasena] = useState("")
+  const [mensaje, setMensaje] = useState("")
 
-  const handleLogin = async (e) => {
+  const manejarLogin = async (e) => {
     e.preventDefault()
 
-    const isDemoCredentials =
-      username === "admin" && password === "admin123"
-
     try {
-      const res = await fetch("http://127.0.0.1:8000/login", {
+      const respuesta = await fetch("http://127.0.0.1:8000/iniciar-sesion", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ username, password })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre_usuario: nombreUsuario,
+          contrasena: contrasena
+        })
       })
 
-      const data = await res.json()
+      const datos = await respuesta.json()
 
-      if (!res.ok) {
-        setMessage(data.detail || "Error al iniciar sesión")
+      if (!respuesta.ok) {
+        setMensaje(datos.detail || "Error al iniciar sesión")
         return
       }
 
-      localStorage.setItem("username", data.username)
-      localStorage.setItem("demo_mode", "false")
+      localStorage.setItem("nombre_usuario", datos.nombre_usuario)
       router.push("/dashboard")
     } catch {
-      if (isDemoCredentials) {
-        localStorage.setItem("username", username)
-        localStorage.setItem("demo_mode", "true")
-        router.push("/dashboard")
-        return
-      }
-
-      setMessage("No se pudo conectar con el backend")
+      setMensaje("No se pudo conectar con el backend")
     }
   }
 
   return (
-    <main className="login-page">
-      <div className="bg-orb orb-1"></div>
-      <div className="bg-orb orb-2"></div>
+    <main className="pagina-inicio">
+      <section className="tarjeta-inicio">
+        <div className="insignia-inicio">CYBERLAB</div>
 
-      <section className="login-card">
-        <div className="login-badge">CYBERLAB TRAINER</div>
-        <h1 className="login-title">Acceso al sistema</h1>
-        <p className="login-subtitle">
-          Plataforma de simulación de ciberataques
+        <h1 className="titulo-inicio">Acceso al sistema</h1>
+
+        <p className="subtitulo-inicio">
+          Plataforma web de entrenamiento práctico para análisis de eventos,
+          simulación de ataques y respuesta ante incidentes en entornos controlados.
         </p>
 
-        {/* MODO DEMO INFO */}
-        <div className="demo-warning">
-          ⚠️ Modo demostración activo: algunas funciones están simuladas para
-          visualización del sistema.
-        </div>
-
-        <form onSubmit={handleLogin} className="login-form">
+        <form onSubmit={manejarLogin} className="formulario-inicio">
           <input
             type="text"
-            placeholder="Usuario"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="cyber-input"
+            placeholder="Nombre de usuario"
+            value={nombreUsuario}
+            onChange={(e) => setNombreUsuario(e.target.value)}
+            className="campo-inicio"
           />
 
           <input
             type="password"
             placeholder="Contraseña"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="cyber-input"
+            value={contrasena}
+            onChange={(e) => setContrasena(e.target.value)}
+            className="campo-inicio"
           />
 
-          <button type="submit" className="cyber-button">
-            Ingresar al laboratorio
+          <button type="submit" className="boton-principal">
+            Ingresar al sistema
           </button>
         </form>
 
-        <div className="login-message">{message}</div>
+        <div className="mensaje-inicio">{mensaje}</div>
 
-        <div className="demo-box">
-          <div className="demo-title">Credenciales demo</div>
+        <div className="caja-informacion">
+          <div className="titulo-caja-informacion">Acceso de prueba</div>
           <div>Usuario: <strong>admin</strong></div>
           <div>Clave: <strong>admin123</strong></div>
         </div>
       </section>
-
-      <style jsx>{`
-        .demo-warning {
-          margin-top: 10px;
-          margin-bottom: 20px;
-          padding: 10px;
-          font-size: 12px;
-          border-radius: 8px;
-          background: rgba(255, 200, 0, 0.1);
-          color: #ffc107;
-          border: 1px solid rgba(255, 200, 0, 0.3);
-        }
-      `}</style>
     </main>
   )
 }

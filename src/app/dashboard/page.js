@@ -5,545 +5,571 @@ import { useRouter } from "next/navigation"
 
 export default function Dashboard() {
   const router = useRouter()
-  const [username, setUsername] = useState("")
-  const [stats, setStats] = useState({
-    total_events: 0,
-    total_alerts: 0,
-    recent_events: [],
-    recent_alerts: []
-  })
-  const [message, setMessage] = useState("")
-  const [command, setCommand] = useState("")
-  const [startTime, setStartTime] = useState(null)
-  const [elapsed, setElapsed] = useState(0)
-  const [report, setReport] = useState(null)
-  const [validCommands, setValidCommands] = useState([])
-  const [terminalHistory, setTerminalHistory] = useState([
-    "CyberLab Interactive Terminal v1.0",
-    "Escribe 'help' para ver los comandos disponibles."
-  ])
-  const [activeScenario, setActiveScenario] = useState(null)
-  const [missionState, setMissionState] = useState("idle")
-  const [missionText, setMissionText] = useState(
-    "No hay misión activa. Ejecuta una simulación para comenzar."
-  )
-  const [missionChecklist, setMissionChecklist] = useState({
-    reviewedAlerts: false,
-    reviewedEvents: false,
-    blockedIp: false
+
+  const [nombreUsuario, setNombreUsuario] = useState("")
+  const [estadisticas, setEstadisticas] = useState({
+    total_eventos: 0,
+    total_alertas: 0,
+    eventos_recientes: [],
+    alertas_recientes: []
   })
 
-  const validCommandPrefixes = useMemo(
+  const [mensaje, setMensaje] = useState("")
+  const [comando, setComando] = useState("")
+  const [inicioSesion, setInicioSesion] = useState(null)
+  const [tiempoSesion, setTiempoSesion] = useState(0)
+
+  const [reporte, setReporte] = useState(null)
+  const [comandosValidos, setComandosValidos] = useState([])
+
+  const [historialTerminal, setHistorialTerminal] = useState([
+    "Sistema de Análisis CyberLab",
+    "Escribe 'ayuda' para ver los comandos disponibles."
+  ])
+
+  const [escenarioActivo, setEscenarioActivo] = useState(null)
+  const [estadoEscenario, setEstadoEscenario] = useState("inactivo")
+  const [textoEscenario, setTextoEscenario] = useState(
+    "No hay un escenario activo. Ejecuta una simulación para comenzar."
+  )
+
+  const [checklistEscenario, setChecklistEscenario] = useState({
+    revisoAlertas: false,
+    revisoEventos: false,
+    bloqueoIp: false
+  })
+
+  const LIMITE_ESCENARIO_SEG = 300
+  const [inicioEscenario, setInicioEscenario] = useState(null)
+  const [tiempoRestanteEscenario, setTiempoRestanteEscenario] = useState(LIMITE_ESCENARIO_SEG)
+
+  const [nivelActual, setNivelActual] = useState(1)
+  const [nivelesCompletados, setNivelesCompletados] = useState({
+    nivel1: false
+  })
+
+  // Se mantiene por compatibilidad con tu storage, aunque ya no se usa para bloquear
+  const [guiasCompletadas, setGuiasCompletadas] = useState({
+    nivel1: false,
+    nivel2: false
+  })
+
+  // ✅ NUEVO: modal de bloqueo por curso no completado
+  const [modalBloqueoAbierto, setModalBloqueoAbierto] = useState(false)
+  const [modalBloqueoNivel, setModalBloqueoNivel] = useState(1)
+  const [modalBloqueoProgreso, setModalBloqueoProgreso] = useState(0)
+
+  const prefijosComandosValidos = useMemo(
     () => [
-      "help",
-      "status",
-      "show alerts",
-      "show events",
-      "show blocked",
-      "block ip ",
-      "unblock ip ",
-      "clear"
+      "ayuda",
+      "estado",
+      "ver alertas",
+      "ver eventos",
+      "ver bloqueadas",
+      "bloquear ip ",
+      "desbloquear ip ",
+      "limpiar"
     ],
     []
   )
 
-  const getDemoStats = () => ({
-    total_events: 12,
-    total_alerts: 3,
-    recent_events: [
-      {
-        id: 12,
-        event_type: "Fuerza Bruta",
-        source_ip: "192.168.1.50",
-        description: "Intento fallido de login #10"
-      },
-      {
-        id: 11,
-        event_type: "Fuerza Bruta",
-        source_ip: "192.168.1.50",
-        description: "Intento fallido de login #9"
-      },
-      {
-        id: 10,
-        event_type: "Escaneo de Puertos",
-        source_ip: "192.168.1.99",
-        description: "Intento de escaneo al puerto 443"
-      },
-      {
-        id: 9,
-        event_type: "Escaneo de Puertos",
-        source_ip: "192.168.1.99",
-        description: "Intento de escaneo al puerto 22"
-      }
+  const claveProgreso = useMemo(() => {
+    if (!nombreUsuario) return null
+    return `cyberlab_progreso_${nombreUsuario}`
+  }, [nombreUsuario])
+
+  const calcularProgreso = () => {
+    let total = 0
+    if (checklistEscenario.revisoAlertas) total += 33
+    if (checklistEscenario.revisoEventos) total += 33
+    if (checklistEscenario.bloqueoIp) total += 34
+    return total
+  }
+
+  const escenarioCompletado = () => calcularProgreso() === 100
+
+  const cargarProgresoLocal = () => {
+    if (!claveProgreso) return null
+    const raw = localStorage.getItem(claveProgreso)
+    if (!raw) return null
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+
+  const guardarProgresoLocal = (data) => {
+    if (!claveProgreso) return
+    const anterior = cargarProgresoLocal() || {}
+
+    const combinado = {
+      ...anterior,
+      ...data,
+      nivelActual,
+      nivelesCompletados,
+      guiasCompletadas
+    }
+
+    localStorage.setItem(claveProgreso, JSON.stringify(combinado))
+  }
+
+  // ✅ NUEVO: cálculo del progreso de lectura por nivel (según seccionesVistas)
+  const SECCIONES_INFO = useMemo(
+    () => [
+      "introduccion",
+      "objetivos",
+      "fundamentos",
+      "metodologia",
+      "comandos",
+      "evidencia",
+      "procedimiento",
+      "errores",
+      "buenas_practicas",
+      "criterio"
     ],
-    recent_alerts: [
-      {
-        id: 3,
-        title: "Ataque de fuerza bruta detectado",
-        severity: "Alta",
-        description: "Se detectaron múltiples intentos fallidos desde la IP 192.168.1.50"
-      },
-      {
-        id: 2,
-        title: "Escaneo de puertos detectado",
-        severity: "Media",
-        description: "La IP 192.168.1.99 realizó múltiples intentos de escaneo"
-      }
-    ]
-  })
+    []
+  )
 
-  const isDemoMode = () => {
-    if (typeof window === "undefined") return false
-    return localStorage.getItem("demo_mode") === "true"
-  }
+  const obtenerProgresoLecturaNivel = (nivel) => {
+    const raw = cargarProgresoLocal()
+    const secciones = raw?.seccionesVistas
+    if (!secciones) return 0
 
-  const loadStats = async () => {
-    if (isDemoMode()) {
-      setStats(getDemoStats())
-      return
+    const clave = `nivel${nivel}`
+    const mapa = secciones[clave]
+    if (!mapa) return 0
+
+    const total = SECCIONES_INFO.length
+    let vistos = 0
+    for (const id of SECCIONES_INFO) {
+      if (mapa[id]) vistos += 1
     }
 
+    return Math.round((vistos / total) * 100)
+  }
+
+  const abrirModalBloqueo = (nivel) => {
+    const progreso = obtenerProgresoLecturaNivel(nivel)
+    setModalBloqueoNivel(nivel)
+    setModalBloqueoProgreso(progreso)
+    setModalBloqueoAbierto(true)
+  }
+
+  const cerrarModalBloqueo = () => {
+    setModalBloqueoAbierto(false)
+  }
+
+  const cargarEstadisticas = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/stats")
-      const data = await res.json()
-      setStats(data)
+      const respuesta = await fetch("http://127.0.0.1:8000/estadisticas")
+      const datos = await respuesta.json()
+      setEstadisticas(datos)
     } catch {
-      setMessage("No se pudieron cargar las estadísticas")
+      setMensaje("No se pudieron cargar las estadísticas")
     }
   }
 
-  const startSessionIfNeeded = () => {
-    if (!startTime) {
-      setStartTime(Date.now())
-      setReport(null)
+  const iniciarSesionSiEsNecesario = () => {
+    if (!inicioSesion) {
+      setInicioSesion(Date.now())
+      setReporte(null)
     }
   }
 
-  const scrollToMission = () => {
-    setTimeout(() => {
-      document.querySelector(".mission-panel")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start"
-      })
-    }, 100)
-  }
-
-  const startScenario = (data) => {
-    setActiveScenario({
-      type: data.attack_type,
-      ip: data.ip
-    })
-    setMissionState("attack_started")
-    setMissionChecklist({
-      reviewedAlerts: false,
-      reviewedEvents: false,
-      blockedIp: false
-    })
-    setMissionText(
-      `🚨 ${data.case_title}\n\n${data.case_text}\n\nQué debes hacer ahora:\n${data.next_step}`
+  const reiniciarEscenarioPorTiempo = () => {
+    setEscenarioActivo(null)
+    setEstadoEscenario("inactivo")
+    setTextoEscenario(
+      "Tiempo agotado.\n\nEl escenario debe realizarse nuevamente.\n\nEjecuta una simulación para comenzar."
     )
-    scrollToMission()
+    setChecklistEscenario({
+      revisoAlertas: false,
+      revisoEventos: false,
+      bloqueoIp: false
+    })
+    setInicioEscenario(null)
+    setTiempoRestanteEscenario(LIMITE_ESCENARIO_SEG)
+    setReporte(null)
+
+    setHistorialTerminal((anterior) => [
+      ...anterior,
+      "> sistema: tiempo agotado",
+      "El escenario fue reiniciado por tiempo."
+    ])
+
+    guardarProgresoLocal({
+      escenarioActivo: null,
+      estadoEscenario: "inactivo",
+      textoEscenario:
+        "Tiempo agotado.\n\nEl escenario debe realizarse nuevamente.\n\nEjecuta una simulación para comenzar.",
+      checklistEscenario: {
+        revisoAlertas: false,
+        revisoEventos: false,
+        bloqueoIp: false
+      },
+      inicioEscenario: null,
+      tiempoRestanteEscenario: LIMITE_ESCENARIO_SEG,
+      nivelActual,
+      nivelesCompletados
+    })
   }
 
-  const simulateAttack = async () => {
-    startSessionIfNeeded()
+  const iniciarEscenario = (datos) => {
+    const inicio = Date.now()
 
-    if (isDemoMode()) {
-      const data = {
-        message: "Simulación ejecutada en modo demo - 10 intentos detectados",
-        attack_type: "Fuerza Bruta",
-        ip: "192.168.1.50",
-        case_title: "Caso activo: fuerza bruta sobre autenticación",
-        case_text:
-          "El sistema detectó múltiples intentos fallidos de inicio de sesión desde la IP 192.168.1.50. Tu rol es investigar el incidente y contenerlo.",
-        next_step: "Usa 'show alerts' o 'show events' para comenzar el análisis."
-      }
+    setEscenarioActivo({
+      tipo: datos.tipo_ataque,
+      ip: datos.ip
+    })
 
-      setMessage(data.message)
-      setStats(getDemoStats())
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: simulación de fuerza bruta ejecutada",
-        data.message
-      ])
-      startScenario(data)
-      return
-    }
+    setEstadoEscenario("iniciado")
+
+    setChecklistEscenario({
+      revisoAlertas: false,
+      revisoEventos: false,
+      bloqueoIp: false
+    })
+
+    const texto =
+      `Escenario activo: ${datos.titulo_caso}\n\n${datos.texto_caso}\n\nSiguiente acción recomendada:\n${datos.siguiente_paso}`
+    setTextoEscenario(texto)
+
+    setInicioEscenario(inicio)
+    setTiempoRestanteEscenario(LIMITE_ESCENARIO_SEG)
+    setReporte(null)
+
+    guardarProgresoLocal({
+      escenarioActivo: { tipo: datos.tipo_ataque, ip: datos.ip },
+      estadoEscenario: "iniciado",
+      textoEscenario: texto,
+      checklistEscenario: {
+        revisoAlertas: false,
+        revisoEventos: false,
+        bloqueoIp: false
+      },
+      inicioEscenario: inicio,
+      tiempoRestanteEscenario: LIMITE_ESCENARIO_SEG,
+      nivelActual,
+      nivelesCompletados
+    })
+  }
+
+  const ejecutarSimulacionFuerzaBruta = async () => {
+    iniciarSesionSiEsNecesario()
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/simulate/bruteforce", {
+      const respuesta = await fetch("http://127.0.0.1:8000/simular/fuerza-bruta", {
         method: "POST"
       })
-      const data = await res.json()
-      setMessage(data.message)
-      loadStats()
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: simulación de fuerza bruta ejecutada",
-        data.message
+
+      const datos = await respuesta.json()
+
+      setMensaje(datos.mensaje)
+      await cargarEstadisticas()
+
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        "> sistema: simulación de fuerza bruta ejecutada",
+        datos.mensaje
       ])
-      startScenario(data)
+
+      iniciarEscenario(datos)
     } catch {
-      setMessage("No se pudo ejecutar la simulación")
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: error al ejecutar simulación de fuerza bruta"
+      setMensaje("No se pudo ejecutar la simulación de fuerza bruta")
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        "> sistema: error al ejecutar la simulación de fuerza bruta"
       ])
     }
   }
 
-  const simulatePortScan = async () => {
-    startSessionIfNeeded()
-
-    if (isDemoMode()) {
-      const data = {
-        message: "Escaneo de puertos simulado en modo demo - 10 puertos analizados",
-        attack_type: "Escaneo de Puertos",
-        ip: "192.168.1.99",
-        case_title: "Caso activo: reconocimiento de servicios",
-        case_text:
-          "Se observó actividad de reconocimiento desde la IP 192.168.1.99. Alguien está enumerando puertos para identificar servicios expuestos.",
-        next_step: "Usa 'show events' para revisar los puertos atacados."
-      }
-
-      setMessage(data.message)
-      setStats(getDemoStats())
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: simulación de escaneo de puertos ejecutada",
-        data.message
-      ])
-      startScenario(data)
-      return
-    }
+  const ejecutarSimulacionEscaneoPuertos = async () => {
+    iniciarSesionSiEsNecesario()
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/simulate/portscan", {
+      const respuesta = await fetch("http://127.0.0.1:8000/simular/escaneo-puertos", {
         method: "POST"
       })
-      const data = await res.json()
-      setMessage(data.message)
-      loadStats()
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: simulación de escaneo de puertos ejecutada",
-        data.message
+
+      const datos = await respuesta.json()
+
+      setMensaje(datos.mensaje)
+      await cargarEstadisticas()
+
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        "> sistema: simulación de escaneo de puertos ejecutada",
+        datos.mensaje
       ])
-      startScenario(data)
+
+      iniciarEscenario(datos)
     } catch {
-      setMessage("No se pudo ejecutar la simulación de escaneo de puertos")
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: error al ejecutar simulación de escaneo de puertos"
+      setMensaje("No se pudo ejecutar la simulación de escaneo de puertos")
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        "> sistema: error al ejecutar la simulación de escaneo de puertos"
       ])
     }
   }
 
-  const updateMissionAfterCommand = (normalizedCommand, output) => {
-    if (!activeScenario) return
+  const actualizarEscenarioDespuesComando = (comandoNormalizado, salida) => {
+    if (!escenarioActivo) return
 
-    if (normalizedCommand === "show alerts") {
-      setMissionChecklist((prev) => ({ ...prev, reviewedAlerts: true }))
-      setMissionState("reviewing_alerts")
-      setMissionText(
-        `🧠 Análisis inicial completado\n\nYa revisaste las alertas del incidente.\n\nLo siguiente es revisar el detalle del comportamiento del atacante.\n\nQué debes hacer ahora:\nshow events`
-      )
+    if (comandoNormalizado === "ver alertas") {
+      const nuevoChecklist = { ...checklistEscenario, revisoAlertas: true }
+      setChecklistEscenario(nuevoChecklist)
+      setEstadoEscenario("analizando_alertas")
+
+      const nuevoTexto =
+        "Análisis inicial completado.\n\nYa revisaste las alertas del incidente.\n\nAhora debes revisar el detalle del comportamiento del atacante.\n\nSiguiente acción recomendada:\nver eventos"
+      setTextoEscenario(nuevoTexto)
+
+      guardarProgresoLocal({
+        escenarioActivo,
+        estadoEscenario: "analizando_alertas",
+        textoEscenario: nuevoTexto,
+        checklistEscenario: nuevoChecklist,
+        inicioEscenario,
+        tiempoRestanteEscenario,
+        nivelActual,
+        nivelesCompletados
+      })
       return
     }
 
-    if (normalizedCommand === "show events") {
-      setMissionChecklist((prev) => ({ ...prev, reviewedEvents: true }))
-      setMissionState("reviewing_events")
+    if (comandoNormalizado === "ver eventos") {
+      const nuevoChecklist = { ...checklistEscenario, revisoEventos: true }
+      setChecklistEscenario(nuevoChecklist)
+      setEstadoEscenario("analizando_eventos")
 
-      const nextIp = activeScenario.ip
-      const scenarioLabel =
-        activeScenario.type === "Fuerza Bruta"
-          ? "fuerza bruta"
-          : "escaneo de puertos"
+      const ipObjetivo = escenarioActivo.ip
+      const tipoEscenario =
+        escenarioActivo.tipo === "Fuerza Bruta" ? "fuerza bruta" : "escaneo de puertos"
+      const nuevoTexto =
+        `Evidencia analizada.\n\nConfirmaste que el incidente corresponde a ${tipoEscenario} desde la IP ${ipObjetivo}.\n\nSiguiente acción recomendada:\nbloquear ip ${ipObjetivo}`
+      setTextoEscenario(nuevoTexto)
 
-      setMissionText(
-        `📊 Evidencia analizada\n\nConfirmaste que el incidente corresponde a ${scenarioLabel} desde la IP ${nextIp}.\n\nQué debes hacer ahora:\nblock ip ${nextIp}`
-      )
+      guardarProgresoLocal({
+        escenarioActivo,
+        estadoEscenario: "analizando_eventos",
+        textoEscenario: nuevoTexto,
+        checklistEscenario: nuevoChecklist,
+        inicioEscenario,
+        tiempoRestanteEscenario,
+        nivelActual,
+        nivelesCompletados
+      })
       return
     }
 
     if (
-      normalizedCommand.startsWith("block ip ") &&
-      output.toLowerCase().includes("bloqueada correctamente")
+      comandoNormalizado.startsWith("bloquear ip ") &&
+      salida.toLowerCase().includes("bloqueada correctamente")
     ) {
-      setMissionChecklist((prev) => ({ ...prev, blockedIp: true }))
-      setMissionState("resolved")
-      setMissionText(
-        `✅ Ataque contenido\n\nLa IP atacante fue bloqueada correctamente.\n\nEl caso práctico ya está resuelto.\n\nQué debes hacer ahora:\n- Usa 'show blocked' para verificar el bloqueo\n- Luego pulsa 'Generar informe de sesión'`
-      )
+      const nuevoChecklist = { ...checklistEscenario, bloqueoIp: true }
+      setChecklistEscenario(nuevoChecklist)
+      setEstadoEscenario("resuelto")
+
+      const nuevosNiveles = { ...nivelesCompletados, nivel1: true }
+      setNivelesCompletados(nuevosNiveles)
+      setNivelActual((prev) => (prev < 2 ? 2 : prev))
+
+      const nuevoTexto =
+        "Escenario resuelto.\n\nLa IP atacante fue bloqueada correctamente.\n\nPuedes verificar el bloqueo con 'ver bloqueadas'.\n\nAhora ya puedes generar el reporte de sesión."
+      setTextoEscenario(nuevoTexto)
+
+      guardarProgresoLocal({
+        escenarioActivo,
+        estadoEscenario: "resuelto",
+        textoEscenario: nuevoTexto,
+        checklistEscenario: nuevoChecklist,
+        inicioEscenario,
+        tiempoRestanteEscenario,
+        nivelActual: 2,
+        nivelesCompletados: nuevosNiveles
+      })
     }
   }
 
-  const getDemoCommandOutput = (normalizedCommand) => {
-    if (normalizedCommand === "help") {
-      return (
-        "Comandos disponibles:\n" +
-        "help\n" +
-        "status\n" +
-        "show alerts\n" +
-        "show events\n" +
-        "show blocked\n" +
-        "block ip <ip>\n" +
-        "unblock ip <ip>\n" +
-        "clear"
-      )
-    }
-
-    if (normalizedCommand === "status") {
-      return (
-        "Estado del sistema:\n" +
-        "- Eventos registrados: 12\n" +
-        "- Alertas generadas: 3\n" +
-        "- IPs bloqueadas: 0\n" +
-        "- Laboratorio: operativo"
-      )
-    }
-
-    if (normalizedCommand === "show alerts") {
-      return (
-        "Últimas alertas:\n" +
-        "[Alta] Ataque de fuerza bruta detectado - Se detectaron múltiples intentos fallidos desde la IP 192.168.1.50\n" +
-        "[Media] Escaneo de puertos detectado - La IP 192.168.1.99 realizó múltiples intentos de escaneo"
-      )
-    }
-
-    if (normalizedCommand === "show events") {
-      return (
-        "Últimos eventos:\n" +
-        "Fuerza Bruta | 192.168.1.50 | Intento fallido de login #10\n" +
-        "Fuerza Bruta | 192.168.1.50 | Intento fallido de login #9\n" +
-        "Escaneo de Puertos | 192.168.1.99 | Intento de escaneo al puerto 443\n" +
-        "Escaneo de Puertos | 192.168.1.99 | Intento de escaneo al puerto 22"
-      )
-    }
-
-    if (normalizedCommand === "show blocked") {
-      const blockedCommands = validCommands.filter((cmd) =>
-        cmd.toLowerCase().startsWith("block ip ")
-      )
-
-      if (blockedCommands.length === 0) {
-        return "No hay IPs bloqueadas"
-      }
-
-      const blockedIps = blockedCommands.map((cmd) =>
-        cmd.toLowerCase().replace("block ip ", "").trim()
-      )
-
-      return `IPs bloqueadas:\n${blockedIps.join("\n")}`
-    }
-
-    if (normalizedCommand.startsWith("block ip ")) {
-      const ip = normalizedCommand.replace("block ip ", "").trim()
-      return `IP ${ip} bloqueada correctamente`
-    }
-
-    if (normalizedCommand.startsWith("unblock ip ")) {
-      const ip = normalizedCommand.replace("unblock ip ", "").trim()
-      return `IP ${ip} desbloqueada correctamente`
-    }
-
-    if (normalizedCommand === "clear") {
-      return "__CLEAR__"
-    }
-
-    return `Comando no reconocido: ${normalizedCommand}`
-  }
-
-  const runCommand = async (e) => {
+  const ejecutarComando = async (e) => {
     e.preventDefault()
+    if (!comando.trim()) return
+    iniciarSesionSiEsNecesario()
 
-    if (!command.trim()) return
-
-    startSessionIfNeeded()
-
-    const currentCommand = command.trim()
-    const normalizedCommand = currentCommand.toLowerCase()
-    setCommand("")
-
-    if (isDemoMode()) {
-      const output = getDemoCommandOutput(normalizedCommand)
-
-      if (output === "__CLEAR__") {
-        setTerminalHistory([])
-      } else {
-        setTerminalHistory((prev) => [
-          ...prev,
-          `> ${currentCommand}`,
-          output
-        ])
-      }
-
-      const isValidCommand = validCommandPrefixes.some((prefix) =>
-        normalizedCommand === prefix || normalizedCommand.startsWith(prefix)
-      )
-
-      if (
-        isValidCommand &&
-        output !== "__CLEAR__" &&
-        !output.toLowerCase().includes("comando no reconocido")
-      ) {
-        setValidCommands((prev) => [...prev, currentCommand])
-      }
-
-      updateMissionAfterCommand(normalizedCommand, output)
-      return
-    }
+    const comandoActual = comando.trim()
+    const comandoNormalizado = comandoActual.toLowerCase()
+    setComando("")
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/terminal", {
+      const respuesta = await fetch("http://127.0.0.1:8000/terminal", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ command: currentCommand })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comando: comandoActual })
       })
 
-      const data = await res.json()
+      const datos = await respuesta.json()
 
-      if (data.output === "__CLEAR__") {
-        setTerminalHistory([])
+      if (datos.salida === "__LIMPIAR__") {
+        setHistorialTerminal([])
       } else {
-        setTerminalHistory((prev) => [
-          ...prev,
-          `> ${currentCommand}`,
-          data.output
-        ])
+        setHistorialTerminal((anterior) => [...anterior, `> ${comandoActual}`, datos.salida])
       }
 
-      const isValidCommand = validCommandPrefixes.some((prefix) =>
-        normalizedCommand === prefix || normalizedCommand.startsWith(prefix)
+      const esComandoValido = prefijosComandosValidos.some((prefijo) =>
+        comandoNormalizado === prefijo || comandoNormalizado.startsWith(prefijo)
       )
 
       if (
-        isValidCommand &&
-        data.output !== "__CLEAR__" &&
-        !data.output.toLowerCase().includes("comando no reconocido")
+        esComandoValido &&
+        datos.salida !== "__LIMPIAR__" &&
+        !datos.salida.toLowerCase().includes("comando no reconocido")
       ) {
-        setValidCommands((prev) => [...prev, currentCommand])
+        setComandosValidos((anterior) => [...anterior, comandoActual])
       }
 
-      updateMissionAfterCommand(normalizedCommand, data.output)
-      loadStats()
+      actualizarEscenarioDespuesComando(comandoNormalizado, datos.salida)
+      await cargarEstadisticas()
     } catch {
-      setTerminalHistory((prev) => [
-        ...prev,
-        `> ${currentCommand}`,
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        `> ${comandoActual}`,
         "Error al conectar con la terminal del backend"
       ])
     }
   }
 
-  const generateReport = async () => {
-    if (isDemoMode()) {
-      const currentReport = {
-        username,
-        durationSeconds: elapsed,
-        totalEvents: stats.total_events,
-        totalAlerts: stats.total_alerts,
-        blockedIps: validCommands
-          .filter((cmd) => cmd.toLowerCase().startsWith("block ip "))
-          .map((cmd) => cmd.toLowerCase().replace("block ip ", "").trim()),
-        successfulCommands: validCommands.filter((cmd) => cmd.toLowerCase() !== "clear"),
-        achieved: [
-          stats.total_events > 0 ? "Se ejecutaron simulaciones correctamente" : null,
-          stats.total_alerts > 0 ? "Se detectaron alertas de seguridad" : null,
-          validCommands.some((cmd) => cmd.toLowerCase().startsWith("block ip "))
-            ? "Se aplicaron bloqueos manuales de IP"
-            : null,
-          missionState === "resolved" ? "El caso guiado fue completado" : null
-        ].filter(Boolean),
-        missing: [
-          stats.total_events === 0 ? "No se ejecutaron ataques durante la sesión" : null,
-          stats.total_alerts === 0 ? "No se generaron alertas en la sesión" : null,
-          !validCommands.some((cmd) => cmd.toLowerCase().startsWith("block ip "))
-            ? "No se aplicaron bloqueos manuales de IP"
-            : null,
-          missionState !== "resolved" ? "El caso guiado no fue completado totalmente" : null
-        ].filter(Boolean)
-      }
-
-      setReport(currentReport)
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: informe generado",
-        "Informe de sesión disponible en pantalla."
+  const generarReporte = async () => {
+    if (!escenarioCompletado()) {
+      setMensaje("Debes completar el escenario (100%) antes de generar el reporte.")
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        "> sistema: reporte bloqueado",
+        "Completa el escenario antes de generar el reporte."
       ])
       return
     }
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/report")
-      const data = await res.json()
+      const respuesta = await fetch("http://127.0.0.1:8000/reporte")
+      const datos = await respuesta.json()
 
-      const currentReport = {
-        username,
-        durationSeconds: elapsed,
-        totalEvents: data.total_events,
-        totalAlerts: data.total_alerts,
-        blockedIps: data.blocked_ips.map((ip) => ip.ip_address),
-        successfulCommands: data.actions
-          .filter((action) => action.result === "OK" && action.command !== "clear")
-          .map((action) => action.command),
-        achieved: [
-          data.total_events > 0 ? "Se ejecutaron simulaciones correctamente" : null,
-          data.total_alerts > 0 ? "Se detectaron alertas de seguridad" : null,
-          data.blocked_ips.length > 0 ? "Se aplicaron bloqueos manuales de IP" : null,
-          missionState === "resolved" ? "El caso guiado fue completado" : null
+      const reporteActual = {
+        nombreUsuario,
+        duracionSegundos: tiempoSesion,
+        totalEventos: datos.total_eventos,
+        totalAlertas: datos.total_alertas,
+        ipsBloqueadas: datos.ips_bloqueadas.map((ip) => ip.direccion_ip),
+        comandosCorrectos: datos.acciones
+          .filter((accion) => accion.resultado === "OK" && accion.comando !== "limpiar")
+          .map((accion) => accion.comando),
+        logros: [
+          datos.total_eventos > 0 ? "Se ejecutaron simulaciones correctamente" : null,
+          datos.total_alertas > 0 ? "Se detectaron alertas de seguridad" : null,
+          datos.ips_bloqueadas.length > 0 ? "Se aplicaron bloqueos manuales de IP" : null,
+          estadoEscenario === "resuelto" ? "El escenario activo fue completado" : null
         ].filter(Boolean),
-        missing: [
-          data.total_events === 0 ? "No se ejecutaron ataques durante la sesión" : null,
-          data.total_alerts === 0 ? "No se generaron alertas en la sesión" : null,
-          data.blocked_ips.length === 0 ? "No se aplicaron bloqueos manuales de IP" : null,
-          missionState !== "resolved" ? "El caso guiado no fue completado totalmente" : null
+        pendientes: [
+          datos.total_eventos === 0 ? "No se ejecutaron ataques durante la sesión" : null,
+          datos.total_alertas === 0 ? "No se generaron alertas en la sesión" : null,
+          datos.ips_bloqueadas.length === 0 ? "No se aplicaron bloqueos manuales de IP" : null,
+          estadoEscenario !== "resuelto" ? "El escenario activo no fue completado totalmente" : null
         ].filter(Boolean)
       }
 
-      setReport(currentReport)
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: informe generado",
-        "Informe de sesión disponible en pantalla."
+      setReporte(reporteActual)
+
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        "> sistema: reporte generado",
+        "Reporte de sesión disponible en pantalla."
       ])
     } catch {
-      setTerminalHistory((prev) => [
-        ...prev,
-        "> system: error al generar informe"
+      setHistorialTerminal((anterior) => [
+        ...anterior,
+        "> sistema: error al generar reporte"
       ])
     }
   }
 
   useEffect(() => {
-    const savedUser = localStorage.getItem("username")
-    if (!savedUser) {
+    const usuarioGuardado = localStorage.getItem("nombre_usuario")
+    if (!usuarioGuardado) {
       router.push("/")
       return
     }
-
-    setUsername(savedUser)
-    loadStats()
-
-    const interval = setInterval(() => {
-      loadStats()
-    }, 2000)
-
-    return () => clearInterval(interval)
+    setNombreUsuario(usuarioGuardado)
   }, [router])
 
   useEffect(() => {
-    if (!startTime) return
+    if (!nombreUsuario) return
 
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000))
+    cargarEstadisticas()
+    const guardado = cargarProgresoLocal()
+    if (guardado) {
+      setGuiasCompletadas(guardado.guiasCompletadas || { nivel1: false, nivel2: false })
+      setEscenarioActivo(guardado.escenarioActivo || null)
+      setEstadoEscenario(guardado.estadoEscenario || "inactivo")
+      setTextoEscenario(
+        guardado.textoEscenario || "No hay un escenario activo. Ejecuta una simulación para comenzar."
+      )
+      setChecklistEscenario(
+        guardado.checklistEscenario || { revisoAlertas: false, revisoEventos: false, bloqueoIp: false }
+      )
+      setInicioEscenario(guardado.inicioEscenario || null)
+      setTiempoRestanteEscenario(
+        typeof guardado.tiempoRestanteEscenario === "number"
+          ? guardado.tiempoRestanteEscenario
+          : LIMITE_ESCENARIO_SEG
+      )
+      setNivelActual(guardado.nivelActual || 1)
+      setNivelesCompletados(guardado.nivelesCompletados || { nivel1: false })
+    }
+
+    const intervalo = setInterval(() => {
+      cargarEstadisticas()
+    }, 2000)
+
+    return () => clearInterval(intervalo)
+  }, [nombreUsuario])
+
+  useEffect(() => {
+    if (!inicioSesion) return
+    const intervalo = setInterval(() => {
+      setTiempoSesion(Math.floor((Date.now() - inicioSesion) / 1000))
+    }, 1000)
+    return () => clearInterval(intervalo)
+  }, [inicioSesion])
+
+  useEffect(() => {
+    if (!inicioEscenario || estadoEscenario === "inactivo") return
+
+    const intervalo = setInterval(() => {
+      const transcurrido = Math.floor((Date.now() - inicioEscenario) / 1000)
+      const restante = Math.max(0, LIMITE_ESCENARIO_SEG - transcurrido)
+      setTiempoRestanteEscenario(restante)
+
+      if (claveProgreso) {
+        const guardado = cargarProgresoLocal() || {}
+        guardarProgresoLocal({
+          ...guardado,
+          tiempoRestanteEscenario: restante,
+          nivelActual,
+          nivelesCompletados
+        })
+      }
+
+      if (restante <= 0 && !escenarioCompletado()) {
+        reiniciarEscenarioPorTiempo()
+      }
     }, 1000)
 
-    return () => clearInterval(interval)
-  }, [startTime])
+    return () => clearInterval(intervalo)
+  }, [inicioEscenario, estadoEscenario, checklistEscenario, claveProgreso, nivelActual, nivelesCompletados])
+
+  const irAInformacion = (nivel) => {
+    router.push(`/dashboard/informacion?nivel=${nivel}`)
+  }
 
   return (
     <main className="dashboard-page">
@@ -551,24 +577,24 @@ export default function Dashboard() {
         <header className="hero-panel">
           <div>
             <div className="hero-badge">CENTRO DE OPERACIONES CYBERLAB</div>
-            <h1 className="hero-title">Dashboard de Ciberseguridad</h1>
+            <h1 className="hero-title">Panel de ciberseguridad</h1>
             <p className="hero-subtitle">
-              Operador activo: <strong>{username}</strong>
+              Operador activo: <strong>{nombreUsuario}</strong>
             </p>
+
             <div className="timer-box">
-              Tiempo de sesión: <strong>{elapsed}s</strong>
+              Tiempo de sesión: <strong>{tiempoSesion}s</strong>
             </div>
-            {isDemoMode() && (
-              <div className="demo-warning-banner">
-                ⚠️ Modo demostración activo: esta versión online usa datos simulados.
-              </div>
-            )}
+
+            <div className="timer-box">
+              Nivel actual: <strong>{nivelActual}</strong>
+            </div>
           </div>
 
           <button
             onClick={() => {
-              localStorage.removeItem("username")
-              localStorage.removeItem("demo_mode")
+              localStorage.removeItem("nombre_usuario")
+              if (claveProgreso) localStorage.removeItem(claveProgreso)
               router.push("/")
             }}
             className="logout-button"
@@ -578,69 +604,127 @@ export default function Dashboard() {
         </header>
 
         <section className="learning-panel">
-          <h2>Modo entrenamiento</h2>
+          <h2>Laboratorio de ciberseguridad</h2>
           <p>
-            Esta plataforma funciona como un laboratorio controlado para aprender
-            ciberseguridad ofensiva y defensiva. Aquí puedes simular ataques,
-            observar eventos, revisar alertas y responder manualmente desde la
-            terminal interactiva.
+            Entorno controlado para practicar análisis de eventos, revisión de alertas y respuesta ante incidentes
+            mediante una terminal interactiva.
           </p>
 
           <div className="learning-grid">
             <div className="learning-box">
-              <strong>Objetivo del ejercicio</strong>
+              <strong>Objetivos del ejercicio</strong>
               <ul>
                 <li>Ejecutar una simulación de ataque</li>
                 <li>Analizar eventos y alertas</li>
                 <li>Identificar la IP atacante</li>
                 <li>Aplicar defensa manual desde la terminal</li>
-                <li>Generar un informe final de la sesión</li>
+                <li>Generar un reporte final de la sesión</li>
               </ul>
             </div>
 
             <div className="learning-box">
-              <strong>Comandos útiles</strong>
+              <strong>Comandos disponibles</strong>
               <ul>
-                <li>help</li>
-                <li>status</li>
-                <li>show events</li>
-                <li>show alerts</li>
-                <li>show blocked</li>
-                <li>block ip 192.168.1.50</li>
-                <li>unblock ip 192.168.1.50</li>
-                <li>clear</li>
+                <li>ayuda</li>
+                <li>estado</li>
+                <li>ver eventos</li>
+                <li>ver alertas</li>
+                <li>ver bloqueadas</li>
+                <li>bloquear ip 192.168.1.50</li>
+                <li>desbloquear ip 192.168.1.50</li>
+                <li>limpiar</li>
               </ul>
+            </div>
+
+            <div className="learning-box">
+              <strong>Contenido didáctico</strong>
+              <p style={{ marginTop: 8, marginBottom: 10 }}>
+                Accede al curso del nivel antes de ejecutar la práctica.
+              </p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button className="boton-secundario" onClick={() => irAInformacion(1)}>
+                  Ir a información (Nivel 1)
+                </button>
+                <button
+                  className="boton-secundario"
+                  onClick={() => irAInformacion(2)}
+                  disabled={!nivelesCompletados.nivel1}
+                  title={!nivelesCompletados.nivel1 ? "Bloqueado: completa el Nivel 1" : ""}
+                >
+                  Ir a información (Nivel 2)
+                </button>
+              </div>
             </div>
           </div>
         </section>
 
         <section className="action-panel">
           <div>
-            <h2>Simulación de ataque</h2>
-            <p>
-              Ejecuta un escenario de entrenamiento y observa el comportamiento
-              del sistema en tiempo real.
-            </p>
+            <h2>Simulación de ataques</h2>
+            <p>Ejecuta un escenario de entrenamiento y observa el comportamiento del sistema en tiempo real.</p>
           </div>
 
           <div className="status-box">
             <span className="status-label">Estado</span>
-            <span className="status-value">
-              {message || "Esperando acción del operador..."}
-            </span>
+            <span className="status-value">{mensaje || "Esperando acción del operador..."}</span>
           </div>
 
           <div className="attack-buttons">
-            <button className="attack-button" onClick={simulateAttack}>
-              Ejecutar simulación de fuerza bruta
+            <button
+              className="attack-button"
+              onClick={() => {
+                const progreso = obtenerProgresoLecturaNivel(1)
+                if (progreso < 100) {
+                  setMensaje("Debes completar el curso del Nivel 1 antes de iniciar la simulación.")
+                  setHistorialTerminal((a) => [
+                    ...a,
+                    "> sistema: acceso bloqueado",
+                    `Curso Nivel 1 incompleto (${progreso}%).`
+                  ])
+                  abrirModalBloqueo(1)
+                  return
+                }
+                ejecutarSimulacionFuerzaBruta()
+              }}
+            >
+              Iniciar simulación de fuerza bruta (Nivel 1)
             </button>
 
-            <button className="attack-button secondary" onClick={simulatePortScan}>
-              Ejecutar escaneo de puertos
+            <button
+              className="attack-button secondary"
+              onClick={() => {
+                if (!nivelesCompletados.nivel1) {
+                  setMensaje("Debes completar el Nivel 1 (Fuerza bruta) antes de acceder a este escenario.")
+                  setHistorialTerminal((anterior) => [
+                    ...anterior,
+                    "> sistema: acceso bloqueado",
+                    "Completa el Nivel 1 para desbloquear el escaneo de puertos."
+                  ])
+                  return
+                }
+
+                const progreso = obtenerProgresoLecturaNivel(2)
+                if (progreso < 100) {
+                  setMensaje("Debes completar el curso del Nivel 2 antes de iniciar la simulación.")
+                  setHistorialTerminal((a) => [
+                    ...a,
+                    "> sistema: acceso bloqueado",
+                    `Curso Nivel 2 incompleto (${progreso}%).`
+                  ])
+                  abrirModalBloqueo(2)
+                  return
+                }
+
+                ejecutarSimulacionEscaneoPuertos()
+              }}
+              disabled={!nivelesCompletados.nivel1}
+              title={!nivelesCompletados.nivel1 ? "Bloqueado: completa el Nivel 1" : ""}
+            >
+              Iniciar escaneo de puertos (Nivel 2)
             </button>
 
-            <button className="report-button" onClick={generateReport}>
-              Generar informe de sesión
+            <button className="report-button" onClick={generarReporte}>
+              Generar reporte de sesión
             </button>
           </div>
         </section>
@@ -649,20 +733,37 @@ export default function Dashboard() {
           <div className="panel-header">
             <h2>Escenario activo</h2>
             <span className="tag cyan-tag">
-              {missionState === "resolved" ? "RESUELTO" : "GUIDED MODE"}
+              {estadoEscenario === "resuelto" ? "RESUELTO" : "EN PROCESO"}
             </span>
           </div>
 
-          <pre className="mission-text">{missionText}</pre>
+          <div className="status-box" style={{ marginTop: 0 }}>
+            <span className="status-label">Tiempo restante</span>
+            <span className="status-value">
+              <strong>{tiempoRestanteEscenario}s</strong> / {LIMITE_ESCENARIO_SEG}s
+            </span>
+          </div>
+
+          <pre className="mission-text">{textoEscenario}</pre>
+
+          <div className="progress-wrapper">
+            <div className="progress-top">
+              <span>Progreso del escenario</span>
+              <strong>{calcularProgreso()}%</strong>
+            </div>
+            <div className="progress-bar">
+              <div className="progress-fill" style={{ width: `${calcularProgreso()}%` }}></div>
+            </div>
+          </div>
 
           <div className="mission-progress">
-            <div className={`mission-step ${missionChecklist.reviewedAlerts ? "done" : ""}`}>
+            <div className={`mission-step ${checklistEscenario.revisoAlertas ? "done" : ""}`}>
               Revisar alertas
             </div>
-            <div className={`mission-step ${missionChecklist.reviewedEvents ? "done" : ""}`}>
+            <div className={`mission-step ${checklistEscenario.revisoEventos ? "done" : ""}`}>
               Revisar eventos
             </div>
-            <div className={`mission-step ${missionChecklist.blockedIp ? "done" : ""}`}>
+            <div className={`mission-step ${checklistEscenario.bloqueoIp ? "done" : ""}`}>
               Bloquear atacante
             </div>
           </div>
@@ -671,67 +772,67 @@ export default function Dashboard() {
         <section className="terminal-panel">
           <div className="panel-header">
             <h2>Terminal interactiva</h2>
-            <span className="tag cyan-tag">CMD MODE</span>
+            <span className="tag cyan-tag">MODO CONSOLA</span>
           </div>
 
           <div className="terminal-window">
-            {terminalHistory.map((line, index) => (
-              <div key={index} className="terminal-line">
-                {line}
+            {historialTerminal.map((linea, indice) => (
+              <div key={indice} className="terminal-line">
+                {linea}
               </div>
             ))}
           </div>
 
-          <form onSubmit={runCommand} className="terminal-form">
-            <span className="terminal-prefix">cyberlab@console:~$</span>
+          <form onSubmit={ejecutarComando} className="terminal-form">
+            <span className="terminal-prefix">cyberlab@terminal:~$</span>
             <input
               type="text"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
+              value={comando}
+              onChange={(e) => setComando(e.target.value)}
               placeholder="Escribe un comando..."
               className="terminal-input"
             />
           </form>
         </section>
 
-        {report && (
+        {reporte && (
           <section className="report-panel">
             <div className="panel-header">
-              <h2>Informe de sesión</h2>
-              <span className="tag danger-tag">REPORT</span>
+              <h2>Reporte de sesión</h2>
+              <span className="tag danger-tag">REPORTE</span>
             </div>
 
             <div className="report-grid">
               <div className="report-box">
                 <span className="report-label">Operador</span>
-                <span className="report-value">{report.username}</span>
+                <span className="report-value">{reporte.nombreUsuario}</span>
               </div>
 
               <div className="report-box">
                 <span className="report-label">Tiempo total</span>
-                <span className="report-value">{report.durationSeconds}s</span>
+                <span className="report-value">{reporte.duracionSegundos}s</span>
               </div>
 
               <div className="report-box">
                 <span className="report-label">Eventos</span>
-                <span className="report-value">{report.totalEvents}</span>
+                <span className="report-value">{reporte.totalEventos}</span>
               </div>
 
               <div className="report-box">
                 <span className="report-label">Alertas</span>
-                <span className="report-value">{report.totalAlerts}</span>
+                <span className="report-value">{reporte.totalAlertas}</span>
               </div>
             </div>
 
             <div className="report-sections">
               <div className="report-box large">
-                <h3>Comandos válidos utilizados</h3>
-                {report.successfulCommands.length === 0 ? (
+                <h3>Comandos correctos utilizados</h3>
+                {reporte.comandosCorrectos.length === 0 ? (
                   <p>No hay comandos registrados todavía.</p>
                 ) : (
                   <ul>
-                    {report.successfulCommands.map((cmd, index) => (
-                      <li key={`${cmd}-${index}`}>{cmd}</li>
+                    {reporte.comandosCorrectos.map((cmd, indice) => (
+                      <li key={`${cmd}-${indice}`}>{cmd}</li>
                     ))}
                   </ul>
                 )}
@@ -739,11 +840,11 @@ export default function Dashboard() {
 
               <div className="report-box large">
                 <h3>IPs bloqueadas</h3>
-                {report.blockedIps.length === 0 ? (
+                {reporte.ipsBloqueadas.length === 0 ? (
                   <p>No se bloquearon IPs en esta sesión.</p>
                 ) : (
                   <ul>
-                    {report.blockedIps.map((ip) => (
+                    {reporte.ipsBloqueadas.map((ip) => (
                       <li key={ip}>{ip}</li>
                     ))}
                   </ul>
@@ -752,25 +853,25 @@ export default function Dashboard() {
 
               <div className="report-box large">
                 <h3>Logros</h3>
-                {report.achieved.length === 0 ? (
+                {reporte.logros.length === 0 ? (
                   <p>No hay logros registrados.</p>
                 ) : (
                   <ul>
-                    {report.achieved.map((item, index) => (
-                      <li key={`achieved-${index}`}>{item}</li>
+                    {reporte.logros.map((item, indice) => (
+                      <li key={`logro-${indice}`}>{item}</li>
                     ))}
                   </ul>
                 )}
               </div>
 
               <div className="report-box large">
-                <h3>Faltó por hacer</h3>
-                {report.missing.length === 0 ? (
+                <h3>Pendientes</h3>
+                {reporte.pendientes.length === 0 ? (
                   <p>La sesión completó correctamente los objetivos básicos.</p>
                 ) : (
                   <ul>
-                    {report.missing.map((item, index) => (
-                      <li key={`missing-${index}`}>{item}</li>
+                    {reporte.pendientes.map((item, indice) => (
+                      <li key={`pendiente-${indice}`}>{item}</li>
                     ))}
                   </ul>
                 )}
@@ -783,21 +884,21 @@ export default function Dashboard() {
           <div className="panel">
             <div className="panel-header">
               <h2>Eventos recientes</h2>
-              <span className="tag cyan-tag">LIVE</span>
+              <span className="tag cyan-tag">ACTIVO</span>
             </div>
 
             <div className="event-list">
-              {stats.recent_events.length === 0 ? (
+              {estadisticas.eventos_recientes.length === 0 ? (
                 <div className="empty-box">No hay eventos aún</div>
               ) : (
-                stats.recent_events.map((event) => (
-                  <div className="event-card" key={event.id}>
+                estadisticas.eventos_recientes.map((evento) => (
+                  <div className="event-card" key={evento.id}>
                     <div className="event-top">
-                      <h3>{event.event_type}</h3>
-                      <span className="event-id">#{event.id}</span>
+                      <h3>{evento.tipo_evento}</h3>
+                      <span className="event-id">#{evento.id}</span>
                     </div>
-                    <p>{event.description}</p>
-                    <div className="event-meta">IP: {event.source_ip}</div>
+                    <p>{evento.descripcion}</p>
+                    <div className="event-meta">IP: {evento.ip_origen}</div>
                   </div>
                 ))
               )}
@@ -807,40 +908,78 @@ export default function Dashboard() {
           <div className="panel">
             <div className="panel-header">
               <h2>Alertas recientes</h2>
-              <span className="tag danger-tag">WARNING</span>
+              <span className="tag danger-tag">ALERTA</span>
             </div>
 
             <div className="alert-list">
-              {stats.recent_alerts.length === 0 ? (
+              {estadisticas.alertas_recientes.length === 0 ? (
                 <div className="empty-box">No hay alertas aún</div>
               ) : (
-                stats.recent_alerts.map((alert) => (
-                  <div className="alert-card" key={alert.id}>
+                estadisticas.alertas_recientes.map((alerta) => (
+                  <div className="alert-card" key={alerta.id}>
                     <div className="alert-top">
-                      <h3>{alert.title}</h3>
-                      <span className="alert-severity">{alert.severity}</span>
+                      <h3>{alerta.titulo}</h3>
+                      <span className="alert-severity">{alerta.severidad}</span>
                     </div>
-                    <p>{alert.description}</p>
+                    <p>{alerta.descripcion}</p>
                   </div>
                 ))
               )}
             </div>
           </div>
         </section>
-      </div>
 
-      <style jsx>{`
-        .demo-warning-banner {
-          margin-top: 14px;
-          padding: 10px 12px;
-          border-radius: 10px;
-          background: rgba(255, 193, 7, 0.12);
-          color: #ffd666;
-          border: 1px solid rgba(255, 193, 7, 0.28);
-          font-size: 13px;
-          font-weight: 600;
-        }
-      `}</style>
+        {/* ✅ MODAL BLOQUEO (por curso incompleto) */}
+        {modalBloqueoAbierto && (
+          <div className="modal-fondo">
+            <div className="modal-tarjeta">
+              <div className="modal-cabecera">
+                <h3 className="modal-titulo">
+                  Acceso bloqueado — Curso obligatorio (Nivel {modalBloqueoNivel})
+                </h3>
+                <button className="boton-secundario" onClick={cerrarModalBloqueo}>
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="modal-cuerpo">
+                <p style={{ marginTop: 0 }}>
+                  Debes completar el contenido del curso correspondiente antes de iniciar la simulación.
+                </p>
+
+                <div className="progress-wrapper" style={{ marginTop: 14 }}>
+                  <div className="progress-top">
+                    <span>Progreso de lectura (Nivel {modalBloqueoNivel})</span>
+                    <strong>{modalBloqueoProgreso}%</strong>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${modalBloqueoProgreso}%` }}></div>
+                  </div>
+                </div>
+
+                <p style={{ marginTop: 14 }}>
+                  Para desbloquear la simulación, completa el <strong>100%</strong> del nivel.
+                </p>
+              </div>
+
+              <div className="modal-pie">
+                <div className="modal-botones">
+                  <button className="boton-secundario" onClick={cerrarModalBloqueo}>
+                    Volver
+                  </button>
+
+                  <button
+                    className="boton-primario"
+                    onClick={() => router.push(`/dashboard/informacion?nivel=${modalBloqueoNivel}`)}
+                  >
+                    Ir a información del nivel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </main>
   )
 }
